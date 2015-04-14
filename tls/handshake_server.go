@@ -25,8 +25,6 @@ type serverHandshakeState struct {
 	suite           *cipherSuite
 	ellipticOk      bool
 	ecdsaOk         bool
-	rsaDecryptOk    bool
-	rsaSignOk       bool
 	sessionState    *sessionState
 	finishedHash    finishedHash
 	masterSecret    []byte
@@ -49,8 +47,6 @@ func (c *Conn) serverHandshake() error {
 	if err != nil {
 		return err
 	}
-	hs.finishedHash = newFinishedHash(hs.c.vers, hs.suite.tls12Hash)
-	hs.finishedHash.Write(hs.clientHello.marshal())
 
 	// For an overview of TLS handshaking, see https://tools.ietf.org/html/rfc5246#section-7.3
 	if isResume {
@@ -115,6 +111,9 @@ func (hs *serverHandshakeState) readClientHello() (isResume bool, err error) {
 	}
 	c.haveVers = true
 
+	hs.finishedHash = newFinishedHash(c.vers)
+	hs.finishedHash.Write(hs.clientHello.marshal())
+
 	hs.hello = new(serverHelloMsg)
 
 	supportedCurve := false
@@ -174,7 +173,7 @@ Curves:
 		// Although sending an empty NPN extension is reasonable, Firefox has
 		// had a bug around this. Best to send nothing at all if
 		// config.NextProtos is empty. See
-		// https://golang.org/issue/5445.
+		// https://code.google.com/p/go/issues/detail?id=5445.
 		if hs.clientHello.nextProtoNeg && len(config.NextProtos) > 0 {
 			hs.hello.nextProtoNeg = true
 			hs.hello.nextProtos = config.NextProtos
@@ -199,26 +198,7 @@ Curves:
 		}
 	}
 
-	if priv, ok := hs.cert.PrivateKey.(crypto.Signer); ok {
-		switch priv.Public().(type) {
-		case *ecdsa.PublicKey:
-			hs.ecdsaOk = true
-		case *rsa.PublicKey:
-			hs.rsaSignOk = true
-		default:
-			c.sendAlert(alertInternalError)
-			return false, fmt.Errorf("crypto/tls: unsupported signing key type (%T)", priv.Public())
-		}
-	}
-	if priv, ok := hs.cert.PrivateKey.(crypto.Decrypter); ok {
-		switch priv.Public().(type) {
-		case *rsa.PublicKey:
-			hs.rsaDecryptOk = true
-		default:
-			c.sendAlert(alertInternalError)
-			return false, fmt.Errorf("crypto/tls: unsupported decryption key type (%T)", priv.Public())
-		}
-	}
+	_, hs.ecdsaOk = hs.cert.PrivateKey.(*ecdsa.PrivateKey)
 
 	if hs.checkForResumption() {
 		return true, nil
@@ -234,7 +214,7 @@ Curves:
 	}
 
 	for _, id := range preferenceList {
-		if hs.setCipherSuite(id, supportedList, c.vers) {
+		if hs.suite = c.tryCipherSuite(id, supportedList, c.vers, hs.ellipticOk, hs.ecdsaOk); hs.suite != nil {
 			break
 		}
 	}
@@ -248,9 +228,9 @@ Curves:
 	for _, id := range hs.clientHello.cipherSuites {
 		if id == TLS_FALLBACK_SCSV {
 			// The client is doing a fallback connection.
-			if hs.clientHello.vers < c.config.maxVersion() {
+			if hs.clientHello.vers < c.config.MaxVersion {
 				c.sendAlert(alertInappropriateFallback)
-				return false, errors.New("tls: client using inappropriate protocol fallback")
+				return false, errors.New("tls: client using inppropriate protocol fallback")
 			}
 			break
 		}
@@ -259,7 +239,7 @@ Curves:
 	return false, nil
 }
 
-// checkForResumption reports whether we should perform resumption on this connection.
+// checkForResumption returns true if we should perform resumption on this connection.
 func (hs *serverHandshakeState) checkForResumption() bool {
 	c := hs.c
 
@@ -268,8 +248,7 @@ func (hs *serverHandshakeState) checkForResumption() bool {
 	}
 
 	var ok bool
-	var sessionTicket = append([]uint8{}, hs.clientHello.sessionTicket...)
-	if hs.sessionState, ok = c.decryptTicket(sessionTicket); !ok {
+	if hs.sessionState, ok = c.decryptTicket(hs.clientHello.sessionTicket); !ok {
 		return false
 	}
 
@@ -293,7 +272,8 @@ func (hs *serverHandshakeState) checkForResumption() bool {
 	}
 
 	// Check that we also support the ciphersuite from the session.
-	if !hs.setCipherSuite(hs.sessionState.cipherSuite, c.config.cipherSuites(), hs.sessionState.vers) {
+	hs.suite = c.tryCipherSuite(hs.sessionState.cipherSuite, c.config.cipherSuites(), hs.sessionState.vers, hs.ellipticOk, hs.ecdsaOk)
+	if hs.suite == nil {
 		return false
 	}
 
@@ -483,12 +463,13 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 
 		hs.finishedHash.Write(certVerify.marshal())
 	}
+
 	preMasterSecret, err := keyAgreement.processClientKeyExchange(config, hs.cert, ckx, c.vers)
 	if err != nil {
 		c.sendAlert(alertHandshakeFailure)
 		return err
 	}
-	hs.masterSecret = masterFromPreMasterSecret(c.vers, hs.suite.tls12Hash, preMasterSecret, hs.clientHello.random, hs.hello.random)
+	hs.masterSecret = masterFromPreMasterSecret(c.vers, preMasterSecret, hs.clientHello.random, hs.hello.random)
 
 	return nil
 }
@@ -497,7 +478,7 @@ func (hs *serverHandshakeState) establishKeys() error {
 	c := hs.c
 
 	clientMAC, serverMAC, clientKey, serverKey, clientIV, serverIV :=
-		keysFromMasterSecret(c.vers, hs.suite.tls12Hash, hs.masterSecret, hs.clientHello.random, hs.hello.random, hs.suite.macLen, hs.suite.keyLen, hs.suite.ivLen)
+		keysFromMasterSecret(c.vers, hs.masterSecret, hs.clientHello.random, hs.hello.random, hs.suite.macLen, hs.suite.keyLen, hs.suite.ivLen)
 
 	var clientCipher, serverCipher interface{}
 	var clientHash, serverHash macFunction
@@ -669,10 +650,9 @@ func (hs *serverHandshakeState) processCertsFromClient(certificates [][]byte) (c
 	return nil, nil
 }
 
-// setCipherSuite sets a cipherSuite with the given id as the serverHandshakeState
-// suite if that cipher suite is acceptable to use.
-// It returns a bool indicating if the suite was set.
-func (hs *serverHandshakeState) setCipherSuite(id uint16, supportedCipherSuites []uint16, version uint16) bool {
+// tryCipherSuite returns a cipherSuite with the given id if that cipher suite
+// is acceptable to use.
+func (c *Conn) tryCipherSuite(id uint16, supportedCipherSuites []uint16, version uint16, ellipticOk, ecdsaOk bool) *cipherSuite {
 	for _, supported := range supportedCipherSuites {
 		if id == supported {
 			var candidate *cipherSuite
@@ -688,26 +668,18 @@ func (hs *serverHandshakeState) setCipherSuite(id uint16, supportedCipherSuites 
 			}
 			// Don't select a ciphersuite which we can't
 			// support for this client.
-			if candidate.flags&suiteECDHE != 0 {
-				if !hs.ellipticOk {
-					continue
-				}
-				if candidate.flags&suiteECDSA != 0 {
-					if !hs.ecdsaOk {
-						continue
-					}
-				} else if !hs.rsaSignOk {
-					continue
-				}
-			} else if !hs.rsaDecryptOk {
+			if (candidate.flags&suiteECDHE != 0) && !ellipticOk {
+				continue
+			}
+			if (candidate.flags&suiteECDSA != 0) != ecdsaOk {
 				continue
 			}
 			if version < VersionTLS12 && candidate.flags&suiteTLS12 != 0 {
 				continue
 			}
-			hs.suite = candidate
-			return true
+			return candidate
 		}
 	}
-	return false
+
+	return nil
 }
