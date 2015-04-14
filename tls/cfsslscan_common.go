@@ -1,21 +1,5 @@
 package tls
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
-func PrintHello(hello []byte) {
-	clientHello := new(clientHelloMsg)
-	ok := clientHello.unmarshal(hello)
-	if !ok {
-		fmt.Println("Error?")
-	}
-	b, _ := json.MarshalIndent(clientHello, "", " ")
-	fmt.Println(string(b))
-	fmt.Printf("%#+v\n", clientHello)
-}
-
 const (
 	hNone uint8 = iota
 	hMD5
