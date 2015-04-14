@@ -123,6 +123,7 @@ const (
 const (
 	hashSHA1   uint8 = 2
 	hashSHA256 uint8 = 4
+	hashSHA384 uint8 = 5
 )
 
 // Signature algorithms for TLS 1.2 (See RFC 5246, section A.4.1)
@@ -330,7 +331,7 @@ type Config struct {
 	ClientSessionCache ClientSessionCache
 
 	// MinVersion contains the minimum SSL/TLS version that is acceptable.
-	// If zero, then SSLv3 is taken as the minimum.
+	// If zero, then TLS 1.0 is taken as the minimum.
 	MinVersion uint16
 
 	// MaxVersion contains the maximum SSL/TLS version that is acceptable.
@@ -488,10 +489,10 @@ func (c *Config) BuildNameToCertificate() {
 type Certificate struct {
 	Certificate [][]byte
 	// PrivateKey contains the private key corresponding to the public key
-	// in Leaf. For a server, this must be a *rsa.PrivateKey or
-	// *ecdsa.PrivateKey. For a client doing client authentication, this
-	// can be any type that implements crypto.Signer (which includes RSA
-	// and ECDSA private keys).
+	// in Leaf. For a server, this must implement crypto.Signer and/or
+	// crypto.Decrypter, with an RSA or ECDSA PublicKey. For a client
+	// (performing client authentication), this must be a crypto.Signer
+	// with an RSA or ECDSA PublicKey.
 	PrivateKey crypto.PrivateKey
 	// OCSPStaple contains an optional OCSP response which will be served
 	// to clients that request it.
@@ -610,9 +611,12 @@ func defaultCipherSuites() []uint16 {
 }
 
 func initDefaultCipherSuites() {
-	varDefaultCipherSuites = make([]uint16, len(cipherSuites))
-	for i, suite := range cipherSuites {
-		varDefaultCipherSuites[i] = suite.id
+	varDefaultCipherSuites = make([]uint16, 0, len(cipherSuites))
+	for _, suite := range cipherSuites {
+		if suite.flags&suiteDefaultOff != 0 {
+			continue
+		}
+		varDefaultCipherSuites = append(varDefaultCipherSuites, suite.id)
 	}
 }
 
