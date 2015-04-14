@@ -31,6 +31,12 @@ func (ka rsaKeyAgreement) generateServerKeyExchange(config *Config, cert *Certif
 }
 
 func (ka rsaKeyAgreement) processClientKeyExchange(config *Config, cert *Certificate, ckx *clientKeyExchangeMsg, version uint16) ([]byte, error) {
+	preMasterSecret := make([]byte, 48)
+	_, err := io.ReadFull(config.rand(), preMasterSecret[2:])
+	if err != nil {
+		return nil, err
+	}
+
 	if len(ckx.ciphertext) < 2 {
 		return nil, errClientKeyExchange
 	}
@@ -43,12 +49,8 @@ func (ka rsaKeyAgreement) processClientKeyExchange(config *Config, cert *Certifi
 		}
 		ciphertext = ckx.ciphertext[2:]
 	}
-	priv, ok := cert.PrivateKey.(crypto.Decrypter)
-	if !ok {
-		return nil, errors.New("tls: certificate private key does not implement crypto.Decrypter")
-	}
-	// Perform contant time RSA PKCS#1 v1.5 decryption
-	preMasterSecret, err := priv.Decrypt(config.rand(), ciphertext, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: 48})
+
+	err = rsa.DecryptPKCS1v15SessionKey(config.rand(), cert.PrivateKey.(*rsa.PrivateKey), ciphertext, preMasterSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -237,29 +239,29 @@ NextCandidate:
 	if err != nil {
 		return nil, err
 	}
-
-	priv, ok := cert.PrivateKey.(crypto.Signer)
-	if !ok {
-		return nil, errors.New("tls: certificate private key does not implement crypto.Signer")
-	}
 	var sig []byte
 	switch ka.sigType {
 	case signatureECDSA:
-		_, ok := priv.Public().(*ecdsa.PublicKey)
+		privKey, ok := cert.PrivateKey.(*ecdsa.PrivateKey)
 		if !ok {
-			return nil, errors.New("ECDHE ECDSA requires an ECDSA server key")
+			return nil, errors.New("ECDHE ECDSA requires an ECDSA server private key")
 		}
+		r, s, err := ecdsa.Sign(config.rand(), privKey, digest)
+		if err != nil {
+			return nil, errors.New("failed to sign ECDHE parameters: " + err.Error())
+		}
+		sig, err = asn1.Marshal(ecdsaSignature{r, s})
 	case signatureRSA:
-		_, ok := priv.Public().(*rsa.PublicKey)
+		privKey, ok := cert.PrivateKey.(*rsa.PrivateKey)
 		if !ok {
-			return nil, errors.New("ECDHE RSA requires a RSA server key")
+			return nil, errors.New("ECDHE RSA requires a RSA server private key")
+		}
+		sig, err = rsa.SignPKCS1v15(config.rand(), privKey, hashFunc, digest)
+		if err != nil {
+			return nil, errors.New("failed to sign ECDHE parameters: " + err.Error())
 		}
 	default:
 		return nil, errors.New("unknown ECDHE signature algorithm")
-	}
-	sig, err = priv.Sign(config.rand(), digest, hashFunc)
-	if err != nil {
-		return nil, errors.New("failed to sign ECDHE parameters: " + err.Error())
 	}
 
 	skx := new(serverKeyExchangeMsg)

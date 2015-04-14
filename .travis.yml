@@ -1,0 +1,11 @@
+language: go
+go:
+- 1.4
+script:
+  - go get github.com/cloudflare/cf-tls/tls
+  - go test github.com/cloudflare/cf-tls/tls 
+notifications:
+  email:
+    recipients:
+    - jacob@cloudflare.com
+    on_success: never
