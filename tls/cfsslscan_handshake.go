@@ -1,7 +1,10 @@
 package tls
 
-// SayHello sends a simple Client Hello to server and returns the negotiated ciphersuite ID
-func (c *Conn) SayHello() (cipherID uint16, version uint16, err error) {
+import "errors"
+
+// SayHello constructs a simple Client Hello to a server, parses its serverHelloMsg response
+// and returns the negotiated ciphersuite ID
+func (c *Conn) SayHello() (cipherID, version uint16, err error) {
 	hello := &clientHelloMsg{
 		vers:                c.config.maxVersion(),
 		compressionMethods:  []uint8{compressionNone},
@@ -15,9 +18,18 @@ func (c *Conn) SayHello() (cipherID uint16, version uint16, err error) {
 		cipherSuites:        c.config.cipherSuites(),
 		signatureAndHashes:  allSignatureAndHashAlgorithms,
 	}
+	serverHello, err := c.sayHello(hello)
+	if err != nil {
+		return
+	}
+	cipherID, version = serverHello.cipherSuite, serverHello.vers
+	return
 
+}
+
+// sayHello is the backend to SayHello that returns a full serverHelloMsg for processing.
+func (c *Conn) sayHello(hello *clientHelloMsg) (serverHello *serverHelloMsg, err error) {
 	c.writeRecord(recordTypeHandshake, hello.marshal())
-
 	msg, err := c.readHandshake()
 	if err != nil {
 		return
@@ -25,8 +37,7 @@ func (c *Conn) SayHello() (cipherID uint16, version uint16, err error) {
 	serverHello, ok := msg.(*serverHelloMsg)
 	if !ok {
 		c.sendAlert(alertUnexpectedMessage)
-		return
+		return nil, errors.New("invalid ServerHello")
 	}
-	cipherID, version = serverHello.cipherSuite, serverHello.vers
 	return
 }
