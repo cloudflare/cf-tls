@@ -1,6 +1,6 @@
 language: go
 go:
-- 1.4
+  - tip
 script:
   - go get github.com/cloudflare/cf-tls/tls
   - go test github.com/cloudflare/cf-tls/tls 
