@@ -14,7 +14,7 @@ func (c *Conn) SayHello() (cipherID, curveType uint16, curveID CurveID, version 
 		nextProtoNeg:        len(c.config.NextProtos) > 0,
 		secureRenegotiation: true,
 		cipherSuites:        c.config.cipherSuites(),
-		signatureAndHashes:  allSignatureAndHashAlgorithms,
+		signatureAndHashes:  supportedSKXSignatureAlgorithms,
 	}
 	serverHello, err := c.sayHello(hello)
 	if err != nil {
