@@ -1,33 +1,102 @@
 package tls
 
+import "fmt"
+
+type hashAlgID uint8
+
 const (
-	hNone uint8 = iota
-	hMD5
-	hSHA1
-	hSHA224
-	hSHA256
-	hSHA384
-	hSHA512
+	HashNone hashAlgID = iota
+	HashMD5
+	HashSHA1
+	HashSHA224
+	HashSHA256
+	HashSHA384
+	HashSHA512
 )
+
+func (h hashAlgID) String() string {
+	switch h {
+	case HashNone:
+		return "None"
+	case HashMD5:
+		return "MD5"
+	case HashSHA1:
+		return "SHA1"
+	case HashSHA224:
+		return "SHA224"
+	case HashSHA256:
+		return "SHA256"
+	case HashSHA384:
+		return "SHA384"
+	case HashSHA512:
+		return "SHA512"
+	default:
+		return "Unknown"
+	}
+}
+
+type sigAlgID uint8
 
 // Signature algorithms for TLS 1.2 (See RFC 5246, section A.4.1)
 const (
-	sigAnon uint8 = iota
-	sigDSA
-	sigRSA
-	sigECDSA
+	SigAnon sigAlgID = iota
+	SigRSA
+	SigDSA
+	SigECDSA
 )
+
+func (sig sigAlgID) String() string {
+	switch sig {
+	case SigAnon:
+		return "Anon"
+	case SigRSA:
+		return "RSA"
+	case SigDSA:
+		return "DSA"
+	case SigECDSA:
+		return "ECDSA"
+	default:
+		return "Unknown"
+	}
+}
+
+// SignatureAndHash mirrors the TLS 1.2, SignatureAndHashAlgorithm struct. See
+// RFC 5246, section A.4.1.
+type SignatureAndHash struct {
+	h hashAlgID
+	s sigAlgID
+}
+
+func (sigAlg SignatureAndHash) String() string {
+	return fmt.Sprintf("{%s,%s}", sigAlg.s, sigAlg.h)
+}
+
+func (sigAlg SignatureAndHash) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf(`{"signature":"%s","hash":"%s"}`, sigAlg.s, sigAlg.h)), nil
+}
+
+func (sigAlg SignatureAndHash) internal() signatureAndHash {
+	return signatureAndHash{uint8(sigAlg.h), uint8(sigAlg.s)}
+}
 
 // allSignatureAndHashAlgorithms contains all possible signature and
 // hash algorithm pairs that the can be advertised in a TLS 1.2 ClientHello.
-var allSignatureAndHashAlgorithms []signatureAndHash
+var AllSignatureAndHashAlgorithms []SignatureAndHash
 
 func init() {
-	for hash := hNone; hash <= hSHA512; hash++ {
-		for signature := sigAnon; signature <= sigECDSA; signature++ {
-			allSignatureAndHashAlgorithms = append(allSignatureAndHashAlgorithms,
-				signatureAndHash{hash, signature})
+	for hash := HashNone; hash <= HashSHA512; hash++ {
+		for signature := SigAnon; signature <= SigECDSA; signature++ {
+			AllSignatureAndHashAlgorithms = append(AllSignatureAndHashAlgorithms,
+				SignatureAndHash{hash, signature})
 		}
+	}
+}
+
+// SetSupportedSKXSignatureAlgorithms resets the supported signatures and hashes to the
+func SetSupportedSKXSignatureAlgorithms(newSigAls []SignatureAndHash) {
+	supportedSKXSignatureAlgorithms = make([]signatureAndHash, len(newSigAls))
+	for i := range newSigAls {
+		supportedSKXSignatureAlgorithms[i] = newSigAls[i].internal()
 	}
 }
 
