@@ -79,11 +79,16 @@ func (sigAlg SignatureAndHash) internal() signatureAndHash {
 	return signatureAndHash{uint8(sigAlg.h), uint8(sigAlg.s)}
 }
 
-// allSignatureAndHashAlgorithms contains all possible signature and
+// defaultSignatureAndHashAlgorithms contains the default signature and hash
+// algorithm paris supported by `crypto/tls`
+var defaultSignatureAndHashAlgorithms []signatureAndHash
+
+// AllSignatureAndHashAlgorithms contains all possible signature and
 // hash algorithm pairs that the can be advertised in a TLS 1.2 ClientHello.
 var AllSignatureAndHashAlgorithms []SignatureAndHash
 
 func init() {
+	defaultSignatureAndHashAlgorithms = supportedSKXSignatureAlgorithms
 	for hash := HashNone; hash <= HashSHA512; hash++ {
 		for signature := SigAnon; signature <= SigECDSA; signature++ {
 			AllSignatureAndHashAlgorithms = append(AllSignatureAndHashAlgorithms,
@@ -92,12 +97,19 @@ func init() {
 	}
 }
 
-// SetSupportedSKXSignatureAlgorithms resets the supported signatures and hashes to the
+// SetSupportedSKXSignatureAlgorithms sets the supported signatures and hashes
+// to the given set.
 func SetSupportedSKXSignatureAlgorithms(newSigAls []SignatureAndHash) {
 	supportedSKXSignatureAlgorithms = make([]signatureAndHash, len(newSigAls))
 	for i := range newSigAls {
 		supportedSKXSignatureAlgorithms[i] = newSigAls[i].internal()
 	}
+}
+
+// ResetSupportedSKXSignatureAlgorithms resets the supported signatures and
+// hashes to their default value.
+func ResetSupportedSKXSignatureAlgorithms() {
+	supportedSKXSignatureAlgorithms = defaultSignatureAndHashAlgorithms
 }
 
 // TLSVersions is a list of the current SSL/TLS Versions implemented by Go
