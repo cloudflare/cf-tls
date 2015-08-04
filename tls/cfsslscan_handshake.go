@@ -2,7 +2,7 @@ package tls
 
 // SayHello constructs a simple Client Hello to a server, parses its serverHelloMsg response
 // and returns the negotiated ciphersuite ID, and, if an EC cipher suite, the curve ID
-func (c *Conn) SayHello() (cipherID, curveType uint16, curveID CurveID, version uint16, err error) {
+func (c *Conn) SayHello() (cipherID, curveType uint16, curveID CurveID, version uint16, certs [][]byte, err error) {
 	hello := &clientHelloMsg{
 		vers:                c.config.maxVersion(),
 		compressionMethods:  []uint8{compressionNone},
@@ -20,33 +20,35 @@ func (c *Conn) SayHello() (cipherID, curveType uint16, curveID CurveID, version 
 	if err != nil {
 		return
 	}
+	// Prime the connection, if necessary, for key
+	// exchange messages by reading off the certificate
+	// message and, if necessary, the OCSP stapling
+	// message
+	var msg interface{}
+	msg, err = c.readHandshake()
+	if err != nil {
+		return
+	}
+	certMsg, ok := msg.(*certificateMsg)
+	if !ok || len(certMsg.certificates) == 0 {
+		err = unexpectedMessageError(certMsg, msg)
+		return
+	}
+	certs = certMsg.certificates
 
-	if CipherSuites[serverHello.cipherSuite].EllipticCurve {
-		// Prime the connection, if necessary, for key
-		// exchange messages by reading off the certificate
-		// message and, if necessary, the OCSP stapling
-		// message
-		var msg interface{}
+	if serverHello.ocspStapling {
 		msg, err = c.readHandshake()
 		if err != nil {
 			return
 		}
-		certMsg, ok := msg.(*certificateMsg)
-		if !ok || len(certMsg.certificates) == 0 {
-			err = unexpectedMessageError(certMsg, msg)
+		certStatusMsg, ok := msg.(*certificateStatusMsg)
+		if !ok {
+			err = unexpectedMessageError(certStatusMsg, msg)
 			return
 		}
-		if serverHello.ocspStapling {
-			msg, err = c.readHandshake()
-			if err != nil {
-				return
-			}
-			certStatusMsg, ok := msg.(*certificateStatusMsg)
-			if !ok {
-				err = unexpectedMessageError(certStatusMsg, msg)
-				return
-			}
-		}
+	}
+
+	if CipherSuites[serverHello.cipherSuite].EllipticCurve {
 
 		var skx *serverKeyExchangeMsg
 		skx, err = c.exchangeKeys()
