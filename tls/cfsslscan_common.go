@@ -95,11 +95,9 @@ var skxsLock sync.Mutex
 
 func init() {
 	defaultSignatureAndHashAlgorithms = supportedSKXSignatureAlgorithms
-	for hash := HashNone; hash <= HashSHA512; hash++ {
-		for signature := SigAnon; signature <= SigECDSA; signature++ {
-			AllSignatureAndHashAlgorithms = append(AllSignatureAndHashAlgorithms,
-				SignatureAndHash{hash, signature})
-		}
+	for _, sighash := range supportedSKXSignatureAlgorithms {
+		AllSignatureAndHashAlgorithms = append(AllSignatureAndHashAlgorithms,
+			SignatureAndHash{hashAlgID(sighash.hash), sigAlgID(sighash.signature)})
 	}
 }
 
