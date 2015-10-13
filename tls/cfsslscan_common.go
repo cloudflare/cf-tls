@@ -1,6 +1,9 @@
 package tls
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 type hashAlgID uint8
 
@@ -87,6 +90,9 @@ var defaultSignatureAndHashAlgorithms []signatureAndHash
 // hash algorithm pairs that the can be advertised in a TLS 1.2 ClientHello.
 var AllSignatureAndHashAlgorithms []SignatureAndHash
 
+// skxsLock prevents the concurrent modification of supportedSKXSignatureAlgorithms.
+var skxsLock sync.Mutex
+
 func init() {
 	defaultSignatureAndHashAlgorithms = supportedSKXSignatureAlgorithms
 	for hash := HashNone; hash <= HashSHA512; hash++ {
@@ -99,7 +105,9 @@ func init() {
 
 // SetSupportedSKXSignatureAlgorithms sets the supported signatures and hashes
 // to the given set.
+// ResetSupportedSKXSignatureAlgorithms() must be called afterwards to free.
 func SetSupportedSKXSignatureAlgorithms(newSigAls []SignatureAndHash) {
+	skxsLock.Lock()
 	supportedSKXSignatureAlgorithms = make([]signatureAndHash, len(newSigAls))
 	for i := range newSigAls {
 		supportedSKXSignatureAlgorithms[i] = newSigAls[i].internal()
@@ -110,6 +118,7 @@ func SetSupportedSKXSignatureAlgorithms(newSigAls []SignatureAndHash) {
 // hashes to their default value.
 func ResetSupportedSKXSignatureAlgorithms() {
 	supportedSKXSignatureAlgorithms = defaultSignatureAndHashAlgorithms
+	skxsLock.Unlock()
 }
 
 // TLSVersions is a list of the current SSL/TLS Versions implemented by Go
