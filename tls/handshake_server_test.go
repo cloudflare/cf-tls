@@ -641,7 +641,7 @@ func TestHandshakeServerSNIGetCertificateError(t *testing.T) {
 	runServerTestTLS12(t, test)
 }
 
-// TestCipherSuiteCertPreferance ensures that we select an RSA ciphersuite with
+// TestCipherSuiteCertPreference ensures that we select an RSA ciphersuite with
 // an RSA certificate and an ECDSA ciphersuite with an ECDSA certificate.
 func TestCipherSuiteCertPreferenceECDSA(t *testing.T) {
 	config := *testConfig
