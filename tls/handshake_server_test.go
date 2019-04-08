@@ -641,7 +641,7 @@ func TestHandshakeServerSNIGetCertificateError(t *testing.T) {
 	runServerTestTLS12(t, test)
 }
 
-// TestCipherSuiteCertPreferance ensures that we select an RSA ciphersuite with
+// TestCipherSuiteCertPreference ensures that we select an RSA ciphersuite with
 // an RSA certificate and an ECDSA ciphersuite with an ECDSA certificate.
 func TestCipherSuiteCertPreferenceECDSA(t *testing.T) {
 	config := *testConfig
@@ -720,7 +720,7 @@ func TestFallbackSCSV(t *testing.T) {
 		name: "FallbackSCSV",
 		// OpenSSL 1.0.1j is needed for the -fallback_scsv option.
 		command: []string{"openssl", "s_client", "-fallback_scsv"},
-		expectHandshakeErrorIncluding: "inppropriate protocol fallback",
+		expectHandshakeErrorIncluding: "inappropriate protocol fallback",
 	}
 	runServerTestTLS11(t, test)
 }
